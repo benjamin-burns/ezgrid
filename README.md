@@ -5,19 +5,19 @@
 
 -------
 
-EZ-Grid aims to simplify and speed up the grid search process by streamlining grid search initialization, execution, and analysis in a highly configurable manner. Essentially a high-level wrapper for the SLURM `sbatch` command in `--array` mode, EZ-Grid removes the need for writing deep, nested for loops and manually partitioning tasks between jobs. The key features of EZ-Grid are listed below.
+EZ-Grid aims to simplify and speed up the grid search process by streamlining grid search initialization, execution, and analysis in a highly configurable manner. Essentially a high-level wrapper for the SLURM `sbatch` command in `--array` mode, EZ-Grid abstracts away the need for writing deep, nested for loops over hyperparameters and manually partitioning tasks between jobs. The key features of EZ-Grid are listed below.
 
 * Automatically create and execute `sbatch` scripts for hyperparameter tuning grids all from a simple JSON configuration file
 * Reduce mistakes by completing an optional confirmation process to review grid search details before execution
-* Change the number of hyperparameter configurations to be run per SLURM array task with a single click - no more manual task distribution or job runtime calculations
-* Produce randomized, memorable, (and sometimes funny!) "petname" identifiers for each hyperparameter configuration (e.g. `barely-happy-rabbit`), along with a codebook to programmatically retrieve configuration details from identifiers
+* Change the number of hyperparameter configurations to be run per SLURM array task with a single click—say goodbye to manual task distribution and job runtime calculations
+* Produce randomized, memorable, (and sometimes funny!) "petname" identifiers for each hyperparameter configuration (e.g. `openly-vocal-minnow`), along with a codebook to programmatically retrieve configuration details from identifiers
 * Easily specify conditional relationships between hyperparameters (e.g., tune `numAttnHeads` only when `encoderType="Transformer"`)
 * Seamlessly integrate setup and wrapup scripts to automatically execute before and after the grid search [COMING SOON]
 * Track grid search progress through a centralized log [COMING SOON]
 
 ## Getting Started
 
-TEXT
+UNDER CONSTRUCTION
 
 ## Run EZ-Grid
 
@@ -43,7 +43,7 @@ Name identifier for the grid search run.
 Grid search output saved at `saveDir/gridSearchName`. Execution fails if the directory already exists, unless save overwrite option `-o` is enabled.
 
 ### `script` (string)
-Path to the python script to execute for each hyperparameter combination.
+Path to the Python script to execute for each hyperparameter combination.
 
 ### `hyperparameters` (object)
 Dictionary of hyperparameters to sweep. Each key is the hyperparameter name, and the value is a list hyperparameter levels. Hyperparameter values will be passed as _keyword command-line arguments_ to `script`. Non-hyperparameter script arguments can also be included here as lists with one element.
@@ -103,4 +103,10 @@ Structure:
 }
 ```
 
-Conditional hyperparameters need not be specified, and the field can be omitted entirely if not used. As with the global (unconditional) hyperparameter field, the conditional hyperparameter field can be used to specify conditional, constant inputs be only providing one level.
+Conditional hyperparameters need not be specified, and the field can be omitted entirely if not used. As with the global (unconditional) hyperparameter field, the conditional hyperparameter field can be used to specify conditional, constant inputs by only providing one level.
+
+### `setup` (string)
+Path to shell script to be executed immediately before hyperparameter tuning grid starts. Executed in the same shell as the sbatch script. Example uses include loading modules, activating execution environments, or preprocessing data. Can be omitted if not used.
+
+### `wrapup` (string)
+Path to sbatch script (you'll have to create this one!) to be executed immediately after hyperparameter tuning grid ends. Example uses include automatically generating grid search summaries, saving results to permenant storage, or running the best model on test data. Can be omitted if not used.

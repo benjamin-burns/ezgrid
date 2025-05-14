@@ -27,3 +27,6 @@ def multiply_slurm_time(time_str, multiplier):
     new_seconds = rem % 60
 
     return f"{new_days}-{new_hours:02}:{new_minutes:02}:{new_seconds:02}"
+
+def get_arguments(combo):
+    return " ".join([f"--{k}={v}" for k, v in combo.items() if k != "ezgrid_id"])

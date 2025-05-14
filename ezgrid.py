@@ -8,7 +8,7 @@ from math import ceil
 import petname
 from rich.console import Console
 from rich.pretty import pprint
-from ezgridUtils import multiply_slurm_time
+from ezgridUtils import multiply_slurm_time, get_arguments
 
 # TODO: tool to quickly run specific ezgrid id or group of ezgrid ids
 
@@ -51,6 +51,8 @@ if not args.overwrite and os.path.isdir(saveLoc):
 if not os.path.exists(parsed["script"]):
     raise ValueError(f"{parsed['script']} not found")
 
+# TODO: add options in config to specify type of script and whether to run in subshell or current shell
+
 if ("setup" in parsed and parsed["setup"] is not None) and not os.path.exists(parsed["setup"]):
     raise ValueError(f"{parsed['setup']} not found")
 
@@ -92,21 +94,24 @@ for combo in combinations:
             usedNames.add(candidateName)
     combo["ezgrid_id"] = candidateName
 
+for combo in combinations:
+    execute = f'python {parsed["script"]} {get_arguments(combo)}'
+    if parsed["passConfigIdToScript"]:
+        execute += f" --ezgrid_id={combo['ezgrid_id']}"
+    combo["ezgrid_execute"] = execute
+
 configLoc = os.path.join(saveLoc, "ezgrid_configs.jsonl")
 with open(configLoc, "w") as f:
     for item in combinations:
         f.write(json.dumps(item) + "\n")
 
-combinationsDict = {combo["ezgrid_id"]: {k: v for k,v in combo.items() if k != "ezgrid_id"} for combo in combinations}
+combinationsDict = {combo["ezgrid_id"]: {k: v for k,v in combo.items() if k not in ["ezgrid_id", "ezgrid_execute"]} for combo in combinations}
 with open(os.path.join(saveLoc, "ezgrid_ids.json"), "w") as f:
     json.dump(combinationsDict, f, indent=2)
 
 # Create sbatch submission script
 sbatchContent = "#!/bin/bash\n"
 sbatchContent += f"#SBATCH --time={multiply_slurm_time(parsed['timePerConfig'], parsed['configsPerTask'])}\n"
-# if parsed["configsPerTask"] == 1:
-#     sbatchContent += f"#SBATCH --array=0-{len(combinations) - 1}"
-# else:
 sbatchContent += f"#SBATCH --array=0-{ceil(len(combinations) / parsed['configsPerTask']) - 1}"
 sbatchContent += f"%{parsed['maxSimultaneousTasks']}\n"
 for slurmArg, slurmVal in parsed["slurm"].items():
@@ -119,13 +124,10 @@ sbatchContent += "START_INDEX=$((SLURM_ARRAY_TASK_ID * CONFIGS_PER_TASK))\nEND_I
 sbatchContent += "for i in $(seq $START_INDEX $END_INDEX); do\n"
 sbatchContent += f'\tHPARAM_LINE=$(sed -n "$((i + 1))p" {configLoc})\n'
 sbatchContent += f'\t[ -z "$HPARAM_LINE" ] && break\n\n'
-varlist = ""
-for jsonArg in combinations[0].keys():
-    varlist += f"{jsonArg} "
-sbatchContent += f'\tread {varlist} <<< $(python3 -c "\nimport json, sys\n'
+sbatchContent += f'\tread ezgrid_id ezgrid_execute <<< $(python3 -c "\nimport json, sys\n'
 sbatchContent += f"d = json.loads('$HPARAM_LINE')\nprint("
 arglist = ""
-for jsonArg in combinations[0].keys():
+for jsonArg in ["ezgrid_id", "ezgrid_execute"]:
     arglist += f"d['{jsonArg}'], "
 arglist = arglist[:-2]
 sbatchContent += f'{arglist})\n")\n\n'
@@ -135,14 +137,11 @@ logDir = os.path.join(configDir, "logs")
 sbatchContent += f"\tmkdir {logDir}\n"
 sbatchContent += f"\texec > {os.path.join(logDir, 'outputLog')}.out\n"
 sbatchContent += f"\texec 2> {os.path.join(logDir, 'errorLog')}.err\n\n"
-pythonCall = f'\tpython {parsed["script"]}'
-for jsonArg in combinations[0].keys():
-    if jsonArg == "ezgrid_id" and not parsed["passConfigIdToScript"]:
-        continue
-    pythonCall += f' --{jsonArg}="${jsonArg}"'
-pythonCall += "\n"
+pythonCall = "$ezgrid_execute"
+sbatchContent += f'\techo {pythonCall} > {os.path.join(configDir, "ezgridCall.txt")}\n\n'
+pythonCall = "\teval " + pythonCall + "\n"
 sbatchContent += pythonCall
-sbatchContent += "done\n\n"
+sbatchContent += "done\n"
 
 with open(f"{parsed['gridSearchName']}.sbatch", "w") as f:
     f.write(sbatchContent)
