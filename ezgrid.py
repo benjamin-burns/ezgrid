@@ -4,6 +4,7 @@ from itertools import product
 import os
 import json
 import subprocess
+from math import ceil
 import petname
 from rich.console import Console
 from rich.pretty import pprint
@@ -61,6 +62,26 @@ os.makedirs(saveLoc, exist_ok=True)
 
 # Create JSONL file with program configs
 combinations = [dict(zip(parsed["hyperparameters"].keys(), values)) for values in product(*parsed["hyperparameters"].values())]
+
+if "conditional" in parsed and len(parsed["conditional"].keys()) > 0:
+    for hyper, conditions in parsed["conditional"].items():
+        if len(conditions.keys()) > 0:
+            for condition, newHypers in conditions.items():
+                if len(newHypers.keys()) > 0:
+                    for newHyper, levels in newHypers.items():
+                        newCombinations = []
+                        assert newHyper not in parsed["hyperparameters"].keys(), f"Cannot override global hyperparameter {newHyper} in {hyper} conditional clause. Remove {newHyper} from the hyperparameter clause to condition it on other hyperparameters"
+                        assert len(levels) > 0, f"No values provided for hyperparameter {newHyper} conditioned on {hyper}={condition}"
+                        for combo in combinations:
+                            if combo[hyper] == condition:
+                                for level in levels:
+                                    newCombo = combo.copy()
+                                    newCombo[newHyper] = level
+                                    newCombinations.append(newCombo)
+                            else:
+                                newCombinations.append(combo)
+                        combinations = newCombinations.copy()
+
 usedNames = set()
 for combo in combinations:
     uniqueName = False
@@ -82,23 +103,26 @@ with open(os.path.join(saveLoc, "ezgrid_ids.json"), "w") as f:
 
 # Create sbatch submission script
 sbatchContent = "#!/bin/bash\n"
-sbatchContent += f"#SBATCH --time={multiply_slurm_time(parsed['timePerConfig'], parsed['configsPerTask'])}"
-if parsed["configsPerTask"] == 1:
-    sbatchContent += f"#SBATCH --array=0-{len(combinations) - 1}"
-else:
-    # TODO
-    raise NotImplementedError()
+sbatchContent += f"#SBATCH --time={multiply_slurm_time(parsed['timePerConfig'], parsed['configsPerTask'])}\n"
+# if parsed["configsPerTask"] == 1:
+#     sbatchContent += f"#SBATCH --array=0-{len(combinations) - 1}"
+# else:
+sbatchContent += f"#SBATCH --array=0-{ceil(len(combinations) / parsed['configsPerTask']) - 1}"
 sbatchContent += f"%{parsed['maxSimultaneousTasks']}\n"
 for slurmArg, slurmVal in parsed["slurm"].items():
     if slurmArg in ["output", "error"]:
         continue
     sbatchContent += f"#SBATCH --{slurmArg}={slurmVal}\n"
 sbatchContent += f"#SBATCH --output=/dev/null\n#SBATCH --error=/dev/null\n"
-sbatchContent += f'\nHPARAM_LINE=$(sed -n "$((SLURM_ARRAY_TASK_ID + 1))p" {configLoc})\n\n'
+sbatchContent += f'\nCONFIGS_PER_TASK={parsed["configsPerTask"]}\n'
+sbatchContent += "START_INDEX=$((SLURM_ARRAY_TASK_ID * CONFIGS_PER_TASK))\nEND_INDEX=$((START_INDEX + CONFIGS_PER_TASK - 1))\n\n"
+sbatchContent += "for i in $(seq $START_INDEX $END_INDEX); do\n"
+sbatchContent += f'\tHPARAM_LINE=$(sed -n "$((i + 1))p" {configLoc})\n'
+sbatchContent += f'\t[ -z "$HPARAM_LINE" ] && break\n\n'
 varlist = ""
 for jsonArg in combinations[0].keys():
     varlist += f"{jsonArg} "
-sbatchContent += f'read {varlist} <<< $(python3 -c "\nimport json, sys\n'
+sbatchContent += f'\tread {varlist} <<< $(python3 -c "\nimport json, sys\n'
 sbatchContent += f"d = json.loads('$HPARAM_LINE')\nprint("
 arglist = ""
 for jsonArg in combinations[0].keys():
@@ -106,30 +130,31 @@ for jsonArg in combinations[0].keys():
 arglist = arglist[:-2]
 sbatchContent += f'{arglist})\n")\n\n'
 configDir = os.path.join(saveLoc, "${ezgrid_id}")
-sbatchContent += f"mkdir {configDir}\n"
+sbatchContent += f"\tmkdir {configDir}\n"
 logDir = os.path.join(configDir, "logs")
-sbatchContent += f"mkdir {logDir}\n"
-sbatchContent += f"exec > {os.path.join(logDir, 'outputLog')}.out\n"
-sbatchContent += f"exec 2> {os.path.join(logDir, 'errorLog')}.err\n\n"
-pythonCall = f'python {parsed["script"]}'
+sbatchContent += f"\tmkdir {logDir}\n"
+sbatchContent += f"\texec > {os.path.join(logDir, 'outputLog')}.out\n"
+sbatchContent += f"\texec 2> {os.path.join(logDir, 'errorLog')}.err\n\n"
+pythonCall = f'\tpython {parsed["script"]}'
 for jsonArg in combinations[0].keys():
     if jsonArg == "ezgrid_id" and not parsed["passConfigIdToScript"]:
         continue
     pythonCall += f' --{jsonArg}="${jsonArg}"'
-pythonCall += "\n\n"
+pythonCall += "\n"
 sbatchContent += pythonCall
+sbatchContent += "done\n\n"
 
 with open(f"{parsed['gridSearchName']}.sbatch", "w") as f:
     f.write(sbatchContent)
 
-totalConfigs = 1
-for hyper, levels in parsed["hyperparameters"].items():
-    totalConfigs *= len(levels)
-
+totalConfigs = len(combinations)
 days, hms = parsed["timePerConfig"].split("-") if "-" in parsed["timePerConfig"] else ("0", parsed["timePerConfig"])
 hours, minutes, seconds = map(int, hms.split(":"))
-taskTime = int(days) * 24 + hours + minutes / 60 + seconds / 3600
-timeEstimate = totalConfigs * taskTime / parsed["maxSimultaneousTasks"]
+configTime = int(days) * 24 + hours + minutes / 60 + seconds / 3600
+nTasks = ceil(totalConfigs / parsed["configsPerTask"])
+taskTime = configTime * parsed["configsPerTask"]
+waves = ceil(nTasks / parsed["maxSimultaneousTasks"])
+timeEstimate = waves * taskTime
 
 daysEstimate = timeEstimate // 24
 if daysEstimate == 0:

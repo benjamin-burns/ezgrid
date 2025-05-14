@@ -9,9 +9,9 @@ EZ-Grid aims to simplify and speed up the grid search process by streamlining gr
 
 * Automatically create and execute `sbatch` scripts for hyperparameter tuning grids all from a simple JSON configuration file
 * Reduce mistakes by completing an optional confirmation process to review grid search details before execution
-* Change the number of hyperparameter configurations to be run per job array task with a single click - no more manual task distribution or job runtime calculations
+* Change the number of hyperparameter configurations to be run per SLURM array task with a single click - no more manual task distribution or job runtime calculations
 * Produce randomized, memorable, (and sometimes funny!) "petname" identifiers for each hyperparameter configuration (e.g. `barely-happy-rabbit`), along with a codebook to programmatically retrieve configuration details from identifiers
-* Easily specify conditional relationships between hyperparameters (e.g., tune `numAttnHeads` only when `encoderType="Transformer"`) [COMING SOON]
+* Easily specify conditional relationships between hyperparameters (e.g., tune `numAttnHeads` only when `encoderType="Transformer"`)
 * Seamlessly integrate setup and wrapup scripts to automatically execute before and after the grid search [COMING SOON]
 * Track grid search progress through a centralized log [COMING SOON]
 
@@ -20,8 +20,6 @@ EZ-Grid aims to simplify and speed up the grid search process by streamlining gr
 TEXT
 
 ## Run EZ-Grid
-
-Configure JSON file
 
 ```
 Usage: ezgrid <jsonFilePath> [options]
@@ -34,7 +32,7 @@ Optional Arguments:
   -s, --skip                Skip confirmation step
 ```
 
-## EZ-Grid JSON Configuration
+## EZ-Grid Configuration
 
 This section describes the structure and options available in the EZ-Grid JSON configuration file. Example configuration files demonstrating EZ-Grid's functionality are provided in `ExampleConfigs`.
 
@@ -68,7 +66,7 @@ Maximum time for a single run of `script` in format `"d-hh:mm:ss"`. This field r
 Number of distinct hyperparameter configurations to run within a single job array task. That is, `"configsPerJob": 1` submits a separate task for each configuration.
 
 ### `maxSimultaneousJobs` (integer)
-Maximum number of SLURM array tasks to run in parallel.
+Maximum number of SLURM array tasks to run concurrently. _Take care in ensuring that you do not consume large amounts of resources on shared systems for an extended period of time._
 
 ### `slurm` (object)
 SLURM sbatch job configuration header. Refer to SLURM documentation for field details. Omit the `--time` field and use `timePerConfig` instead.
@@ -88,4 +86,21 @@ Example:
 ```
 
 ### `passConfigIdToScript` (boolean)
-If true, a unique hyperparameter configuration identifier "petname" will be passed to your script as a command-line argument under the keyword `ezgrid_id`.
+If true, the unique hyperparameter configuration identifier "petname" will be passed to your script as a command-line argument under the keyword `ezgrid_id`. Suggested for use in program logic for naming consistency.
+
+### `conditional` (object)
+Defines conditional hyperparameters—hyperparameters that are only relevant where certain other hyperparameters take on specific values.
+
+Structure:
+
+```json
+"conditional": {
+    "<conditioned_on>": {
+        "<condition_value>": {
+            "<conditional_param>": [<levels>]
+        }
+    }
+}
+```
+
+Conditional hyperparameters need not be specified, and the field can be omitted entirely if not used. As with the global (unconditional) hyperparameter field, the conditional hyperparameter field can be used to specify conditional, constant inputs be only providing one level.
