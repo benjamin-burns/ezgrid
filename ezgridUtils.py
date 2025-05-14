@@ -1,3 +1,7 @@
+import shutil
+import subprocess
+import os
+
 def multiply_slurm_time(time_str, multiplier):
     from datetime import timedelta
 
@@ -30,3 +34,29 @@ def multiply_slurm_time(time_str, multiplier):
 
 def get_arguments(combo):
     return " ".join([f"--{k}={v}" for k, v in combo.items() if k != "ezgrid_id"])
+
+def submit_with_afterok(sbatch_path, job_id):
+    temp_path = sbatch_path + ".tmp"
+    shutil.copyfile(sbatch_path, temp_path)
+
+    with open(temp_path, 'r') as f:
+        lines = f.readlines()
+
+    # Find the end of the #SBATCH block
+    insert_index = 0
+    for i, line in enumerate(lines):
+        if line.startswith("#SBATCH"):
+            insert_index = i + 1
+        elif line.strip().startswith("#") or line.strip() == "":
+            continue
+        else:
+            break
+
+    # Insert the dependency line within the SBATCH block
+    lines.insert(insert_index, f"#SBATCH --dependency=afterok:{job_id}\n")
+
+    with open(temp_path, 'w') as f:
+        f.writelines(lines)
+
+    subprocess.run(["sbatch", temp_path], capture_output=True, text=True)
+    os.remove(temp_path)

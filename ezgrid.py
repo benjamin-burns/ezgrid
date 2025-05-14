@@ -2,15 +2,14 @@
 from argparse import ArgumentParser
 from itertools import product
 import os
+import sys
 import json
 import subprocess
 from math import ceil
 import petname
 from rich.console import Console
 from rich.pretty import pprint
-from ezgridUtils import multiply_slurm_time, get_arguments
-
-# TODO: tool to quickly run specific ezgrid id or group of ezgrid ids
+from ezgridUtils import multiply_slurm_time, get_arguments, submit_with_afterok
 
 # Parse command line arguments
 parser = ArgumentParser(
@@ -51,13 +50,13 @@ if not args.overwrite and os.path.isdir(saveLoc):
 if not os.path.exists(parsed["script"]):
     raise ValueError(f"{parsed['script']} not found")
 
-# TODO: add options in config to specify type of script and whether to run in subshell or current shell
+if "setup" in parsed:
+    assert "path" in parsed["setup"] and "execution" in parsed["setup"], "setup missing path or execution"
+    if not os.path.exists(parsed["setup"]["path"]):
+        raise ValueError(f"Setup script {parsed['setup']['path']} not found")
 
-if ("setup" in parsed and parsed["setup"] is not None) and not os.path.exists(parsed["setup"]):
-    raise ValueError(f"{parsed['setup']} not found")
-
-if ("wrapup" in parsed and parsed["wrapup"] is not None) and not os.path.exists(parsed["wrapup"]):
-    raise ValueError(f"{parsed['wrapup']} not found")
+if "wrapup" in parsed and not os.path.exists(parsed["wrapup"]):
+    raise ValueError(f"Wrapup script {parsed['wrapup']} not found")
 
 # Create grid search folder
 os.makedirs(saveLoc, exist_ok=True)
@@ -203,14 +202,41 @@ else:
     console.print("")
     console.input("Press enter to continue...")
     console.print("")
-    console.print(f"Results will be saved to [bold yellow]{parsed['saveDir']}[/]")
+    saveMessage = f"Results will be saved to [bold yellow]{parsed['saveDir']}[/]"
+    if args.overwrite:
+        saveMessage += "[bold red] with overwrite enabled[/]"
+    console.print(saveMessage)
     console.print("")
     console.input("Press enter to continue...")
     console.print("")
+    if "setup" in parsed or "wrapup" in parsed:
+        if "setup" in parsed:
+            console.print(f'The following command will be executed before the grid search: [bold yellow]{parsed["setup"]["execution"]} {parsed["setup"]["path"]}[/]')
+        if "wrapup" in parsed:
+            console.print(f'The following job will be submitted after the grid search: [bold yellow]{parsed["wrapup"]}')
+        console.print("")
+        console.input("Press enter to continue...")
+        console.print("")
     console.print(f"You are about to run a grid search for [bold yellow]{totalConfigs}[/] hyperparameter combinations.")
     console.print(f"Ignoring queue time, this grid search has an upper bound of [bold yellow]{timeText}[/].")
     console.print("")
     console.input("[bold red]Press enter to begin the grid search...")
     console.print("")
 
-subprocess.run(["sbatch", f"{parsed['gridSearchName']}.sbatch"])
+if "setup" in parsed:
+    setup = f'{parsed["setup"]["execution"]} {parsed["setup"]["path"]}'
+    command = f"bash -c '{setup} && sbatch {parsed['gridSearchName']}.sbatch'"
+else:
+    command = f"sbatch {parsed['gridSearchName']}.sbatch"
+
+result = subprocess.run(command, shell=True, capture_output=True, text=True)
+if result.returncode == 0:
+    job_id = result.stdout.split()[-1]
+    console.print(f"[bold yellow]EZ-Grid Job {job_id} submitted successfully![/]")
+    if "wrapup" in parsed:
+        submit_with_afterok(parsed['wrapup'], job_id)
+else:
+    console.print(f"[bold red]There was an issue submitting this job :([/]")
+    sys.exit(1)
+
+# TODO: adjust ids and configs output and their save location, update documentation with file creation and where to expect files to be created

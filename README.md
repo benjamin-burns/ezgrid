@@ -103,10 +103,25 @@ Structure:
 }
 ```
 
-Conditional hyperparameters need not be specified, and the field can be omitted entirely if not used. As with the global (unconditional) hyperparameter field, the conditional hyperparameter field can be used to specify conditional, constant inputs by only providing one level.
+Conditional hyperparameters need not be specified, and the field should be omitted entirely if not used. As with the global (unconditional) hyperparameter field, the conditional hyperparameter field can be used to specify conditional, constant inputs by only providing one level.
 
-### `setup` (string)
-Path to shell script to be executed immediately before hyperparameter tuning grid starts. Executed in the same shell as the sbatch script. Example uses include loading modules, activating execution environments, or preprocessing data. Can be omitted if not used.
+### `setup` (object)
+Specify a script to be executed immediately before the hyperparameter tuning grid starts. Example uses include loading modules, activating execution environments, or preprocessing data. Omit if not used.
+
+Example:
+
+```json
+"setup": {
+    "path": "path/to/setup.sh",
+    "execution": "source"
+}
+```
+
+In the above example, `source path/to/setup.sh` will run and finish before the grid search begins
 
 ### `wrapup` (string)
-Path to sbatch script (you'll have to create this one!) to be executed immediately after hyperparameter tuning grid ends. Example uses include automatically generating grid search summaries, saving results to permenant storage, or running the best model on test data. Can be omitted if not used.
+Path to sbatch script to be executed immediately after the hyperparameter tuning grid ends successfully. EZ-Grid will automatically add the job execution dependency, but the user should supply all other SLURM arguments in the header (including output and error redirection). Example uses include automatically generating grid search summaries, saving results to permenant storage, or running the best model on test data. Omit if not used.
+
+## Planned Updates
+
+* Ability to quickly run/rerun specific hyperparameter configurations (if, for example, some did not successfully complete due to job timeout)
