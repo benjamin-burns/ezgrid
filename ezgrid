@@ -1,0 +1,7 @@
+#!/bin/bash
+
+module load miniconda3/24.1.2-py310
+conda activate ezgrid
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 "$SCRIPT_DIR/ezgrid.py" "$@"

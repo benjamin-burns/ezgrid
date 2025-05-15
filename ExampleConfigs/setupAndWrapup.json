@@ -1,0 +1,30 @@
+{
+    "gridSearchName": "gridSearchWithSetupWrapup",
+    "saveDir": "/tempStorage/myPersonalFolder",
+    "script": "/myModel/train.py",
+    "hyperparameters": {
+        "optimizer": ["adam", "sgd"],
+        "batch_size": [32, 64],
+        "learning_rate": [0.001, 0.01],
+        "epochs": [10, 20]
+    },
+    "configsPerTask": 1,
+    "maxSimultaneousTasks": 16,
+    "timePerConfig": "0-1:00:00",
+    "slurm": {
+        "job-name": "gridSearchWithSetupWrapup",
+        "nodes": "1",
+        "ntasks": "1",
+        "gpus-per-node": "1",
+        "cpus-per-task": "4",
+        "mem": "80GB",
+        "account": "myAccount",
+        "partition": "myPartition"
+    },
+    "passConfigIdToScript": true,
+    "setup": {
+        "path": "loadEnvironment.sh",
+        "execution": "source"
+    },
+    "wrapup": "/mySubmits/analyzeResults.sbatch"
+}
