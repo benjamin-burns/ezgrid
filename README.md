@@ -12,12 +12,39 @@ EZ-Grid aims to simplify and speed up the grid search process by streamlining gr
 * Change the number of hyperparameter configurations to be run per SLURM array task with a single click—say goodbye to manual task distribution and job runtime calculations
 * Produce randomized, memorable, (and sometimes funny!) "petname" identifiers for each hyperparameter configuration (e.g. `openly-vocal-minnow`), along with a codebook to programmatically retrieve configuration details from identifiers
 * Easily specify conditional relationships between hyperparameters (e.g., tune `numAttnHeads` only when `encoderType="Transformer"`)
-* Seamlessly integrate setup and wrapup scripts to automatically execute before and after the grid search [COMING SOON]
-* Track grid search progress through a centralized log [COMING SOON]
+* Seamlessly integrate setup and wrapup scripts to automatically execute before and after the grid search
+* Track grid search progress through a centralized log
 
 ## Getting Started
 
-UNDER CONSTRUCTION
+1. Clone this repository into your home directory
+```bash
+cd ~
+git clone https://github.com/benjamin-burns/ezgrid
+```
+
+2. Create the Conda environment
+```bash
+conda create -n ezgrid python=3.9
+conda activate ezgrid
+conda install conda-forge::petname
+conda install conda-forge::rich
+```
+_Note: based on your system's Conda installation, you may need to modify lines 3-4 in the ezgrid shell script. These commands remove the need to manually activate the `ezgrid` environment before executing EZ-Grid._
+
+3. Add the `ezgrid` directory to PATH by adding the following line to your `.bashrc` file
+```bash
+export PATH="$HOME/ezgrid:$PATH"
+```
+Restart the terminal or run `source ~/.bashrc` for the change to take effect.
+
+4. Ensure the shell wrapper is executable
+```bash
+chmod +x ~/ezgrid/ezgrid
+```
+
+You can now run the `ezgrid` command from anywhere on your system.
+
 
 ## Run EZ-Grid
 
@@ -31,6 +58,14 @@ Optional Arguments:
   -o, --overwrite           Enable save overwrite
   -s, --skip                Skip confirmation step
 ```
+
+### EZ-Grid Output
+
+`ezgrid_<gridSearchName>_info.json`, `<gridSearchName>.sbatch`, and `<ezgrid_<gridSearchName>.log` will be created in the user's working directory while all other job output
+is saved under an automatically created directory named `gridSearchName` in the specified `saveDir`. Users are encouraged to set `saveDir` to
+temporary "scratch" storage if available and use EZ-Grid's `wrapup` feature to automatically save relevant results to permanent storage.
+
+A directory for each hyperparameter grid combination is created at `<saveDir>/<gridSearchName>/<ezgridConfigID>` where `<ezgridConfigID>` is a unique, automatically generated identifier for each hyperparameter combination. `<ezgridConfigID>` can be accessed during program execution by setting `passConfigIdToScript` to `true`, enabling users to store additional output in `<saveDir>/<gridSearchName>/<ezgridConfigID>`. `stdout` and `stderr` for each script execution are directed to `<saveDir>/<gridSearchName>/<ezgridConfigID>/logs/outputLog.out` and `<saveDir>/<gridSearchName>/<ezgridConfigID>/logs/errorLog.out`, respectively.
 
 ## EZ-Grid Configuration
 
@@ -120,7 +155,7 @@ Example:
 In the above example, `source path/to/setup.sh` will run and finish before the grid search begins
 
 ### `wrapup` (string)
-Path to sbatch script to be executed immediately after the hyperparameter tuning grid ends successfully. EZ-Grid will automatically add the job execution dependency, but the user should supply all other SLURM arguments in the header (including output and error redirection). Example uses include automatically generating grid search summaries, saving results to permenant storage, or running the best model on test data. Omit if not used.
+Path to sbatch script to be executed immediately after the hyperparameter tuning grid ends successfully. EZ-Grid will automatically add the job execution dependency, but the user should supply all other SLURM arguments in the header (including output and error redirection). Example uses include automatically generating grid search summaries, saving results to permanent storage, or running the best model on test data. Omit if not used.
 
 ## Planned Updates
 

@@ -3,6 +3,8 @@ from argparse import ArgumentParser
 from itertools import product
 import os
 import sys
+import shutil
+from datetime import datetime
 import json
 import subprocess
 from math import ceil
@@ -17,17 +19,17 @@ parser = ArgumentParser(
     description="Grid search utility for SLURM workflows",
     epilog="Developed by Benjamin Burns - 2025"
 )
-parser.add_argument("jsonFile", type=str, help="Path to ezgrid configuration file")
+parser.add_argument("jsonFilePath", type=str, help="Path to ezgrid configuration file")
 parser.add_argument("-o", "--overwrite", required=False, action="store_true", help="Enable save overwrite")
 parser.add_argument("-s", "--skip", required=False, action="store_true", help="Skip confirmation step")
 args = parser.parse_args()
 
 # Check if JSON file exists
-if not os.path.exists(args.jsonFile):
-    raise ValueError(f"JSON file {args.jsonFile} does not exist")
+if not os.path.exists(args.jsonFilePath):
+    raise ValueError(f"JSON file {args.jsonFilePath} does not exist")
 
 # Parse JSON
-with open(args.jsonFile, 'r') as file:
+with open(args.jsonFilePath, 'r') as file:
     parsed = json.load(file)
 
 # Check for essential JSON arguments
@@ -47,6 +49,9 @@ saveLoc = os.path.join(parsed["saveDir"], parsed["gridSearchName"])
 if not args.overwrite and os.path.isdir(saveLoc):
     raise ValueError(f"Save location {saveLoc} already exists")
 
+if os.path.exists(f"ezgrid_{parsed['gridSearchName']}.log") and not args.overwrite:
+    raise ValueError(f"Master log ezgrid_{parsed['gridSearchName']}.log already exists in the working directory")
+
 if not os.path.exists(parsed["script"]):
     raise ValueError(f"{parsed['script']} not found")
 
@@ -59,7 +64,12 @@ if "wrapup" in parsed and not os.path.exists(parsed["wrapup"]):
     raise ValueError(f"Wrapup script {parsed['wrapup']} not found")
 
 # Create grid search folder
+if os.path.isdir(saveLoc) and args.overwrite:
+    shutil.rmtree(saveLoc)
 os.makedirs(saveLoc, exist_ok=True)
+
+if os.path.exists(f"ezgrid_{parsed['gridSearchName']}.log") and args.overwrite:
+    os.remove(f"ezgrid_{parsed['gridSearchName']}.log")
 
 # Create JSONL file with program configs
 combinations = [dict(zip(parsed["hyperparameters"].keys(), values)) for values in product(*parsed["hyperparameters"].values())]
@@ -105,8 +115,13 @@ with open(configLoc, "w") as f:
         f.write(json.dumps(item) + "\n")
 
 combinationsDict = {combo["ezgrid_id"]: {k: v for k,v in combo.items() if k not in ["ezgrid_id", "ezgrid_execute"]} for combo in combinations}
-with open(os.path.join(saveLoc, "ezgrid_ids.json"), "w") as f:
-    json.dump(combinationsDict, f, indent=2)
+infoDict = {
+    "config": parsed,
+    "submissionTime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    "ezgridIDs": combinationsDict
+}
+with open(os.path.join(f"ezgrid_{parsed['gridSearchName']}_info.json"), "w") as f:
+    json.dump(infoDict, f, indent=2)
 
 # Create sbatch submission script
 sbatchContent = "#!/bin/bash\n"
@@ -138,8 +153,13 @@ sbatchContent += f"\texec > {os.path.join(logDir, 'outputLog')}.out\n"
 sbatchContent += f"\texec 2> {os.path.join(logDir, 'errorLog')}.err\n\n"
 pythonCall = "$ezgrid_execute"
 sbatchContent += f'\techo {pythonCall} > {os.path.join(configDir, "ezgridCall.txt")}\n\n'
-pythonCall = "\teval " + pythonCall + "\n"
+masterLogLoc = f"ezgrid_{parsed['gridSearchName']}.log"
+sbatchContent += "\t( flock -w 60 200 || exit 1\n"
+sbatchContent += f'\techo "[$(date \'+%Y-%m-%d %H:%M:%S\')] $ezgrid_id has started" >&200\n\t) 200>> {os.path.join(os.getcwd(), masterLogLoc)}\n\n'
+pythonCall = "\teval " + pythonCall + "\n\n"
 sbatchContent += pythonCall
+sbatchContent += "\t( flock -w 60 200 || exit 1\n"
+sbatchContent += f'\techo "[$(date \'+%Y-%m-%d %H:%M:%S\')] $ezgrid_id has finished" >&200\n\t) 200>> {os.path.join(os.getcwd(), masterLogLoc)}\n'
 sbatchContent += "done\n"
 
 with open(f"{parsed['gridSearchName']}.sbatch", "w") as f:
@@ -238,5 +258,3 @@ if result.returncode == 0:
 else:
     console.print(f"[bold red]There was an issue submitting this job :([/]")
     sys.exit(1)
-
-# TODO: adjust ids and configs output and their save location, update documentation with file creation and where to expect files to be created

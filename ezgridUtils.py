@@ -1,10 +1,10 @@
+#!/usr/bin/env python3
 import shutil
 import subprocess
 import os
+from datetime import timedelta
 
 def multiply_slurm_time(time_str, multiplier):
-    from datetime import timedelta
-
     # Parse time string into components
     if "-" in time_str:
         days_str, hms = time_str.split("-")
